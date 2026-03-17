@@ -1,0 +1,41 @@
+# Rust
+/target/
+
+# Node / JS / TS
+node_modules/
+dist/
+.npm
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+.mypy_cache/
+.ruff_cache/
+
+# Go
+*.exe
+*.exe~
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
