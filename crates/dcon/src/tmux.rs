@@ -13,8 +13,9 @@ pub enum Split {
 ///
 /// - Creates the session if it doesn't exist, with a shell inside `container`.
 /// - If `window` is given, creates the named window if needed, then selects it.
-/// - If `split` is given and the window was just created, splits it into N panes
-///   with `tmux select-layout even-vertical` / `even-horizontal` afterwards.
+/// - If `split` is given and the window was just created, splits it into N panes.
+/// - `workspace_folder` is passed as `-w` to `docker exec` so the shell starts
+///   in the correct directory inside the container.
 /// - Attaches with `tmux attach-session`, or `tmux switch-client` if we are
 ///   already running inside tmux (i.e. `$TMUX` is set).
 pub fn connect(
@@ -24,35 +25,31 @@ pub fn connect(
     shell: &str,
     project_root: &Path,
     split: Option<Split>,
+    workspace_folder: Option<&str>,
 ) -> Result<(), Error> {
-    ensure_session(session, container, shell, project_root)?;
+    ensure_session(session, container, shell, project_root, workspace_folder)?;
 
-    // Determine the tmux target for split operations.
-    let window_target = if let Some(name) = window {
-        let created = ensure_window(session, name, container, shell)?;
+    if let Some(name) = window {
+        let created = ensure_window(session, name, container, shell, workspace_folder)?;
         select_window(session, name)?;
         if created {
-            // Apply split to the newly created named window.
             if let Some(ref s) = split {
-                apply_split(session, Some(name), container, shell, s)?;
+                apply_split(session, Some(name), container, shell, workspace_folder, s)?;
             }
         }
-        format!("{session}:{name}")
-    } else {
-        // No named window — apply split to window 0 only when the session was
-        // just created (ensure_session returns whether it was new).
-        // We re-check by trying to get the pane count; simpler to just always
-        // apply split on the default window when requested and the session is fresh.
-        // Since ensure_session is idempotent, we track freshness via a second approach:
-        // apply split only if the window has exactly 1 pane right now.
-        if let Some(ref s) = split {
-            apply_split_if_single_pane(session, None, container, shell, s)?;
-        }
-        format!("{session}:0")
-    };
+    } else if let Some(ref s) = split {
+        apply_split_if_single_pane(session, None, container, shell, workspace_folder, s)?;
+    }
 
-    let _ = window_target;
     attach(session)
+}
+
+/// Build the `docker exec` command string, optionally with `-w <workspace_folder>`.
+fn docker_exec_cmd(container: &str, shell: &str, workspace_folder: Option<&str>) -> String {
+    match workspace_folder {
+        Some(dir) => format!("docker exec -it -w {dir} {container} {shell}"),
+        None => format!("docker exec -it {container} {shell}"),
+    }
 }
 
 fn ensure_session(
@@ -60,6 +57,7 @@ fn ensure_session(
     container: &str,
     shell: &str,
     project_root: &Path,
+    workspace_folder: Option<&str>,
 ) -> Result<(), Error> {
     let exists = Command::new("tmux")
         .args(["has-session", "-t", session])
@@ -74,7 +72,7 @@ fn ensure_session(
         .success();
 
     if !exists {
-        let exec_cmd = format!("docker exec -it {container} {shell}");
+        let exec_cmd = docker_exec_cmd(container, shell, workspace_folder);
         let status = Command::new("tmux")
             .args([
                 "new-session",
@@ -97,7 +95,13 @@ fn ensure_session(
 }
 
 /// Returns `true` if the window was newly created, `false` if it already existed.
-fn ensure_window(session: &str, name: &str, container: &str, shell: &str) -> Result<bool, Error> {
+fn ensure_window(
+    session: &str,
+    name: &str,
+    container: &str,
+    shell: &str,
+    workspace_folder: Option<&str>,
+) -> Result<bool, Error> {
     let target = format!("{session}:{name}");
     let exists = Command::new("tmux")
         .args(["select-window", "-t", &target])
@@ -109,7 +113,7 @@ fn ensure_window(session: &str, name: &str, container: &str, shell: &str) -> Res
         return Ok(false);
     }
 
-    let exec_cmd = format!("docker exec -it {container} {shell}");
+    let exec_cmd = docker_exec_cmd(container, shell, workspace_folder);
     let status = Command::new("tmux")
         .args(["new-window", "-t", session, "-n", name, &exec_cmd])
         .status()
@@ -140,6 +144,7 @@ fn apply_split(
     window: Option<&str>,
     container: &str,
     shell: &str,
+    workspace_folder: Option<&str>,
     split: &Split,
 ) -> Result<(), Error> {
     let (count, flag, layout) = match split {
@@ -152,9 +157,8 @@ fn apply_split(
         None => format!("{session}:0"),
     };
 
-    let exec_cmd = format!("docker exec -it {container} {shell}");
+    let exec_cmd = docker_exec_cmd(container, shell, workspace_folder);
 
-    // The window already has 1 pane; create (count - 1) more.
     for _ in 1..count {
         let status = Command::new("tmux")
             .args(["split-window", flag, "-t", &target, &exec_cmd])
@@ -166,7 +170,6 @@ fn apply_split(
         }
     }
 
-    // Even out the pane sizes.
     let status = Command::new("tmux")
         .args(["select-layout", "-t", &target, layout])
         .status()
@@ -179,13 +182,13 @@ fn apply_split(
     Ok(())
 }
 
-/// Apply split only if the target window currently has a single pane
-/// (i.e. it was just created). This avoids adding panes to an existing layout.
+/// Apply split only if the target window currently has a single pane.
 fn apply_split_if_single_pane(
     session: &str,
     window: Option<&str>,
     container: &str,
     shell: &str,
+    workspace_folder: Option<&str>,
     split: &Split,
 ) -> Result<(), Error> {
     let target = match window {
@@ -198,12 +201,10 @@ fn apply_split_if_single_pane(
         .output()
         .map_err(Error::Io)?;
 
-    let pane_count = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .count();
+    let pane_count = String::from_utf8_lossy(&output.stdout).lines().count();
 
     if pane_count == 1 {
-        apply_split(session, window, container, shell, split)?;
+        apply_split(session, window, container, shell, workspace_folder, split)?;
     }
 
     Ok(())

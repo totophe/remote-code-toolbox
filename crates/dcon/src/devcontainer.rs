@@ -1,3 +1,4 @@
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// Walk upward from `start` until we find a directory containing `.devcontainer`.
@@ -12,6 +13,21 @@ pub fn find_project_root(start: &Path) -> Option<PathBuf> {
             return None;
         }
     }
+}
+
+/// Read `workspaceFolder` from `.devcontainer/devcontainer.json`, if present.
+/// Returns `None` if the file is missing, unreadable, or the field is not set.
+pub fn workspace_folder(project_root: &Path) -> Option<String> {
+    #[derive(Deserialize)]
+    struct DevcontainerJson {
+        #[serde(rename = "workspaceFolder")]
+        workspace_folder: Option<String>,
+    }
+
+    let path = project_root.join(".devcontainer").join("devcontainer.json");
+    let contents = std::fs::read_to_string(&path).ok()?;
+    let parsed: DevcontainerJson = serde_json::from_str(&contents).ok()?;
+    parsed.workspace_folder
 }
 
 #[cfg(test)]
@@ -33,7 +49,6 @@ mod tests {
         let root = temp_dir().join("dcon_test_parent");
         let child = root.join("subdir").join("nested");
         fs::create_dir_all(child.join(".devcontainer")).unwrap();
-        // searching from a deeper path should still find it
         let deeper = child.join("src");
         fs::create_dir_all(&deeper).unwrap();
         assert_eq!(find_project_root(&deeper), Some(child));
@@ -44,11 +59,45 @@ mod tests {
     fn returns_none_when_no_devcontainer() {
         let root = temp_dir().join("dcon_test_none");
         fs::create_dir_all(&root).unwrap();
-        // A temp dir with no .devcontainer — walk will eventually hit fs root and return None
-        // We just check it doesn't panic
         let result = find_project_root(&root);
-        // It may or may not find one depending on the host, but it must not panic
         let _ = result;
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn reads_workspace_folder() {
+        let root = temp_dir().join("dcon_test_wsf");
+        fs::create_dir_all(root.join(".devcontainer")).unwrap();
+        fs::write(
+            root.join(".devcontainer").join("devcontainer.json"),
+            r#"{"workspaceFolder": "/workspaces/myproject"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            workspace_folder(&root),
+            Some("/workspaces/myproject".to_string())
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn workspace_folder_missing_field_returns_none() {
+        let root = temp_dir().join("dcon_test_wsf_none");
+        fs::create_dir_all(root.join(".devcontainer")).unwrap();
+        fs::write(
+            root.join(".devcontainer").join("devcontainer.json"),
+            r#"{"name": "My Container"}"#,
+        )
+        .unwrap();
+        assert_eq!(workspace_folder(&root), None);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn workspace_folder_missing_file_returns_none() {
+        let root = temp_dir().join("dcon_test_wsf_nofile");
+        fs::create_dir_all(root.join(".devcontainer")).unwrap();
+        assert_eq!(workspace_folder(&root), None);
         fs::remove_dir_all(&root).unwrap();
     }
 }

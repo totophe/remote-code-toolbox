@@ -82,6 +82,8 @@ fn main() {
         _ => None,
     };
 
+    let workspace_folder = devcontainer::workspace_folder(&project_root);
+
     tmux::connect(
         &session,
         cli.window.as_deref(),
@@ -89,6 +91,7 @@ fn main() {
         &shell,
         &project_root,
         split,
+        workspace_folder.as_deref(),
     )
     .unwrap_or_else(|e| {
         eprintln!("error: {e}");

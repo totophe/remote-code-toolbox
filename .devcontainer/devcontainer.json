@@ -1,6 +1,7 @@
 {
   "name": "Remote Code Toolbox Dev Container",
   "image": "ghcr.io/totophe/dc-toolbelt:node24-toolbox",
+  "workspaceFolder": "/workspaces/remote-code-toolbox",
   "remoteUser": "node",
   "mounts": [
     "source=dc-toolbelt-config,target=/home/node/.dc-toolbelt,type=volume"
