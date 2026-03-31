@@ -96,22 +96,29 @@ fn ensure_session(
             let _ = Command::new("tmux")
                 .args(["set-option", "-g", "mouse", "on"])
                 .status();
-            // Copy mouse selection to system clipboard automatically.
+
+            // Detect the right clipboard command for the platform.
+            let clip_cmd = if cfg!(target_os = "macos") {
+                "pbcopy"
+            } else if std::env::var("WAYLAND_DISPLAY").is_ok() {
+                "wl-copy"
+            } else {
+                "xclip -selection clipboard"
+            };
+
+            // Copy mouse selection to system clipboard on drag end.
+            let copy_pipe = format!("copy-pipe-and-cancel '{clip_cmd}'");
             let _ = Command::new("tmux")
                 .args([
                     "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-                    "send-keys", "-X", "copy-pipe-and-cancel",
+                    "send-keys", "-X", &copy_pipe,
                 ])
                 .status();
             let _ = Command::new("tmux")
                 .args([
                     "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-                    "send-keys", "-X", "copy-pipe-and-cancel",
+                    "send-keys", "-X", &copy_pipe,
                 ])
-                .status();
-            // Let tmux set the terminal clipboard via OSC 52.
-            let _ = Command::new("tmux")
-                .args(["set-option", "-g", "set-clipboard", "on"])
                 .status();
         }
     }
