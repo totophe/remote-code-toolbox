@@ -2,10 +2,11 @@ mod codename;
 mod config;
 mod devcontainer;
 mod docker;
+mod self_update;
 mod shell;
 mod tmux;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 const MAX_PANES: u8 = 10;
 
@@ -15,6 +16,9 @@ const MAX_PANES: u8 = 10;
     about = "Connect to a dev container's tmux session from your project directory"
 )]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+
     /// Name of the tmux window to connect to (creates it if it doesn't exist)
     #[arg(short = 'n', long = "window", value_name = "NAME")]
     window: Option<String>,
@@ -32,6 +36,13 @@ struct Cli {
     side_by_side: Option<u8>,
 }
 
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Update dcon to the latest version
+    #[command(name = "self-update")]
+    SelfUpdate,
+}
+
 fn parse_pane_count(s: &str) -> Result<u8, String> {
     let n: u8 = s.parse().map_err(|_| format!("'{s}' is not a valid number"))?;
     if n < 2 {
@@ -46,6 +57,15 @@ fn parse_pane_count(s: &str) -> Result<u8, String> {
 fn main() {
     let cli = Cli::parse();
 
+    if let Some(Commands::SelfUpdate) = cli.command {
+        self_update::run().unwrap_or_else(|e| {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        });
+        return;
+    }
+
+    // Default: connect to dev container
     if cli.stack.is_some() && cli.side_by_side.is_some() {
         eprintln!("error: --stack and --side-by-side are mutually exclusive");
         std::process::exit(1);

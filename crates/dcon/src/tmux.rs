@@ -89,6 +89,11 @@ fn ensure_session(
         if !status.success() {
             return Err(Error::TmuxFailed("new-session failed".into()));
         }
+
+        // Enable mouse support (scrolling, pane selection, resizing).
+        let _ = Command::new("tmux")
+            .args(["set-option", "-g", "mouse", "on"])
+            .status();
     }
 
     Ok(())
