@@ -4,6 +4,7 @@ use std::path::Path;
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     pub shell: Option<String>,
+    pub mouse: Option<bool>,
 }
 
 impl Config {
@@ -15,6 +16,7 @@ impl Config {
 
         Self {
             shell: project.shell.or(global.shell),
+            mouse: project.mouse.or(global.mouse),
         }
     }
 }

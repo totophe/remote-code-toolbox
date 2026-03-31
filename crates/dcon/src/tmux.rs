@@ -26,8 +26,9 @@ pub fn connect(
     project_root: &Path,
     split: Option<Split>,
     workspace_folder: Option<&str>,
+    mouse: bool,
 ) -> Result<(), Error> {
-    ensure_session(session, container, shell, project_root, workspace_folder)?;
+    ensure_session(session, container, shell, project_root, workspace_folder, mouse)?;
 
     if let Some(name) = window {
         let created = ensure_window(session, name, container, shell, workspace_folder)?;
@@ -58,6 +59,7 @@ fn ensure_session(
     shell: &str,
     project_root: &Path,
     workspace_folder: Option<&str>,
+    mouse: bool,
 ) -> Result<(), Error> {
     let exists = Command::new("tmux")
         .args(["has-session", "-t", session])
@@ -90,10 +92,28 @@ fn ensure_session(
             return Err(Error::TmuxFailed("new-session failed".into()));
         }
 
-        // Enable mouse support (scrolling, pane selection, resizing).
-        let _ = Command::new("tmux")
-            .args(["set-option", "-g", "mouse", "on"])
-            .status();
+        if mouse {
+            let _ = Command::new("tmux")
+                .args(["set-option", "-g", "mouse", "on"])
+                .status();
+            // Copy mouse selection to system clipboard automatically.
+            let _ = Command::new("tmux")
+                .args([
+                    "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
+                    "send-keys", "-X", "copy-pipe-and-cancel",
+                ])
+                .status();
+            let _ = Command::new("tmux")
+                .args([
+                    "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
+                    "send-keys", "-X", "copy-pipe-and-cancel",
+                ])
+                .status();
+            // Let tmux set the terminal clipboard via OSC 52.
+            let _ = Command::new("tmux")
+                .args(["set-option", "-g", "set-clipboard", "on"])
+                .status();
+        }
     }
 
     Ok(())

@@ -103,6 +103,7 @@ fn main() {
     };
 
     let workspace_folder = devcontainer::workspace_folder(&project_root);
+    let mouse = cfg.mouse.unwrap_or(true);
 
     tmux::connect(
         &session,
@@ -112,6 +113,7 @@ fn main() {
         &project_root,
         split,
         workspace_folder.as_deref(),
+        mouse,
     )
     .unwrap_or_else(|e| {
         eprintln!("error: {e}");
