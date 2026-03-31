@@ -45,16 +45,20 @@ URL="https://github.com/${REPO}/releases/download/latest/${BINARY}"
 echo "Downloading ${BINARY} …"
 mkdir -p "${INSTALL_DIR}"
 
+TMP="${INSTALL_DIR}/${TOOL}.tmp.$$"
+trap 'rm -f "${TMP}"' EXIT
+
 if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "${URL}" -o "${INSTALL_DIR}/${TOOL}"
+  curl -fsSL "${URL}" -o "${TMP}"
 elif command -v wget >/dev/null 2>&1; then
-  wget -qO "${INSTALL_DIR}/${TOOL}" "${URL}"
+  wget -qO "${TMP}" "${URL}"
 else
   echo "error: neither curl nor wget found" >&2
   exit 1
 fi
 
-chmod +x "${INSTALL_DIR}/${TOOL}"
+chmod +x "${TMP}"
+mv -f "${TMP}" "${INSTALL_DIR}/${TOOL}"
 
 echo "Installed to ${INSTALL_DIR}/${TOOL}"
 
