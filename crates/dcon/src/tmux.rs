@@ -97,28 +97,25 @@ fn ensure_session(
                 .args(["set-option", "-g", "mouse", "on"])
                 .status();
 
-            // Detect the right clipboard command for the platform.
-            let clip_cmd = if cfg!(target_os = "macos") {
-                "pbcopy"
-            } else if std::env::var("WAYLAND_DISPLAY").is_ok() {
-                "wl-copy"
-            } else {
-                "xclip -selection clipboard"
-            };
+            // Enable OSC 52 clipboard escape sequence — works over SSH
+            // back to the local terminal (iTerm2, WezTerm, Alacritty, etc.).
+            let _ = Command::new("tmux")
+                .args(["set-option", "-g", "set-clipboard", "on"])
+                .status();
+            // Allow tmux to pass through OSC 52 to the outer terminal.
+            let _ = Command::new("tmux")
+                .args(["set-option", "-g", "allow-passthrough", "on"])
+                .status();
 
-            // Copy mouse selection to system clipboard on drag end.
-            let _ = Command::new("tmux")
-                .args([
-                    "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-                    "send", "-X", "copy-pipe-and-cancel", clip_cmd,
-                ])
-                .status();
-            let _ = Command::new("tmux")
-                .args([
-                    "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-                    "send", "-X", "copy-pipe-and-cancel", clip_cmd,
-                ])
-                .status();
+            // Copy selection to tmux buffer + trigger OSC 52 on mouse drag end.
+            for table in &["copy-mode", "copy-mode-vi"] {
+                let _ = Command::new("tmux")
+                    .args([
+                        "bind-key", "-T", table, "MouseDragEnd1Pane",
+                        "send", "-X", "copy-selection-and-cancel",
+                    ])
+                    .status();
+            }
         }
     }
 
