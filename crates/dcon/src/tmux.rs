@@ -107,17 +107,16 @@ fn ensure_session(
             };
 
             // Copy mouse selection to system clipboard on drag end.
-            let copy_pipe = format!("copy-pipe-and-cancel '{clip_cmd}'");
             let _ = Command::new("tmux")
                 .args([
                     "bind-key", "-T", "copy-mode", "MouseDragEnd1Pane",
-                    "send-keys", "-X", &copy_pipe,
+                    "send", "-X", "copy-pipe-and-cancel", clip_cmd,
                 ])
                 .status();
             let _ = Command::new("tmux")
                 .args([
                     "bind-key", "-T", "copy-mode-vi", "MouseDragEnd1Pane",
-                    "send-keys", "-X", &copy_pipe,
+                    "send", "-X", "copy-pipe-and-cancel", clip_cmd,
                 ])
                 .status();
         }
