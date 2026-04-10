@@ -103,8 +103,9 @@ fn ensure_session(
                 .args(["set-option", "-g", "set-clipboard", "on"])
                 .status();
             // Allow tmux to pass through OSC 52 to the outer terminal.
+            // "all" is needed (not just "on") for mosh compatibility.
             let _ = Command::new("tmux")
-                .args(["set-option", "-g", "allow-passthrough", "on"])
+                .args(["set-option", "-g", "allow-passthrough", "all"])
                 .status();
 
             // Copy selection to tmux buffer + trigger OSC 52 on mouse drag end.
