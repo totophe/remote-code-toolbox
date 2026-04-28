@@ -82,7 +82,10 @@ fn main() {
         std::process::exit(1);
     });
 
-    let session = codename::derive(&project_root);
+    let mut session = codename::derive(&project_root);
+    if let Some(ref name) = cli.window {
+        session = format!("{session}-{name}");
+    }
 
     let container = docker::find(&project_root).unwrap_or_else(|e| {
         eprintln!("error: {e}");
@@ -107,7 +110,6 @@ fn main() {
 
     tmux::connect(
         &session,
-        cli.window.as_deref(),
         &container.name,
         &shell,
         &project_root,

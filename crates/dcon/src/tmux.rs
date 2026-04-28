@@ -9,18 +9,17 @@ pub enum Split {
     SideBySide(u8),
 }
 
-/// Ensure the tmux session exists and the right window is selected, then attach.
+/// Ensure the tmux session exists, then attach.
 ///
 /// - Creates the session if it doesn't exist, with a shell inside `container`.
-/// - If `window` is given, creates the named window if needed, then selects it.
-/// - If `split` is given and the window was just created, splits it into N panes.
+/// - If `split` is given and the session's first window has only one pane,
+///   splits it into N panes.
 /// - `workspace_folder` is passed as `-w` to `docker exec` so the shell starts
 ///   in the correct directory inside the container.
 /// - Attaches with `tmux attach-session`, or `tmux switch-client` if we are
 ///   already running inside tmux (i.e. `$TMUX` is set).
 pub fn connect(
     session: &str,
-    window: Option<&str>,
     container: &str,
     shell: &str,
     project_root: &Path,
@@ -30,16 +29,8 @@ pub fn connect(
 ) -> Result<(), Error> {
     ensure_session(session, container, shell, project_root, workspace_folder, mouse)?;
 
-    if let Some(name) = window {
-        let created = ensure_window(session, name, container, shell, workspace_folder)?;
-        select_window(session, name)?;
-        if created {
-            if let Some(ref s) = split {
-                apply_split(session, Some(name), container, shell, workspace_folder, s)?;
-            }
-        }
-    } else if let Some(ref s) = split {
-        apply_split_if_single_pane(session, None, container, shell, workspace_folder, s)?;
+    if let Some(ref s) = split {
+        apply_split_if_single_pane(session, container, shell, workspace_folder, s)?;
     }
 
     attach(session)
@@ -123,54 +114,9 @@ fn ensure_session(
     Ok(())
 }
 
-/// Returns `true` if the window was newly created, `false` if it already existed.
-fn ensure_window(
-    session: &str,
-    name: &str,
-    container: &str,
-    shell: &str,
-    workspace_folder: Option<&str>,
-) -> Result<bool, Error> {
-    let target = format!("{session}:{name}");
-    let exists = Command::new("tmux")
-        .args(["select-window", "-t", &target])
-        .status()
-        .map_err(Error::Io)?
-        .success();
-
-    if exists {
-        return Ok(false);
-    }
-
-    let exec_cmd = docker_exec_cmd(container, shell, workspace_folder);
-    let status = Command::new("tmux")
-        .args(["new-window", "-t", session, "-n", name, &exec_cmd])
-        .status()
-        .map_err(Error::Io)?;
-
-    if !status.success() {
-        return Err(Error::TmuxFailed(format!("new-window '{name}' failed")));
-    }
-    Ok(true)
-}
-
-fn select_window(session: &str, name: &str) -> Result<(), Error> {
-    let target = format!("{session}:{name}");
-    let status = Command::new("tmux")
-        .args(["select-window", "-t", &target])
-        .status()
-        .map_err(Error::Io)?;
-
-    if !status.success() {
-        return Err(Error::TmuxFailed(format!("select-window '{name}' failed")));
-    }
-    Ok(())
-}
-
-/// Split a window into N panes. Called only when the window was just created.
+/// Split a window into N panes. Called only when the session was just created.
 fn apply_split(
     session: &str,
-    window: Option<&str>,
     container: &str,
     shell: &str,
     workspace_folder: Option<&str>,
@@ -181,11 +127,7 @@ fn apply_split(
         Split::SideBySide(n) => (*n, "-h", "even-horizontal"),
     };
 
-    let target = match window {
-        Some(name) => format!("{session}:{name}"),
-        None => format!("{session}:0"),
-    };
-
+    let target = format!("{session}:0");
     let exec_cmd = docker_exec_cmd(container, shell, workspace_folder);
 
     for _ in 1..count {
@@ -214,16 +156,12 @@ fn apply_split(
 /// Apply split only if the target window currently has a single pane.
 fn apply_split_if_single_pane(
     session: &str,
-    window: Option<&str>,
     container: &str,
     shell: &str,
     workspace_folder: Option<&str>,
     split: &Split,
 ) -> Result<(), Error> {
-    let target = match window {
-        Some(name) => format!("{session}:{name}"),
-        None => format!("{session}:0"),
-    };
+    let target = format!("{session}:0");
 
     let output = Command::new("tmux")
         .args(["list-panes", "-t", &target])
@@ -233,7 +171,7 @@ fn apply_split_if_single_pane(
     let pane_count = String::from_utf8_lossy(&output.stdout).lines().count();
 
     if pane_count == 1 {
-        apply_split(session, window, container, shell, workspace_folder, split)?;
+        apply_split(session, container, shell, workspace_folder, split)?;
     }
 
     Ok(())
